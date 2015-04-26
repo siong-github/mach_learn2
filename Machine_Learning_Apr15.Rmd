@@ -1,0 +1,146 @@
+---
+title: "Project1 MachineLearning Apr15"
+author: "S.N"
+date: "Saturday, April 25, 2015"
+output: html_document
+---
+
+##Purpose
+To predict the manner in which 6 participants have exercised based on the given dataset generated from accelerometers on the belt, forearm, arm, and dumbell of the participants. There are five different possible manners, 1 is the correct manner while the other 4 are incorrect: A,B,C,D,E. This is 'classe' variable in the dataset which will be the outcome while the other variables in the dataset are predictors
+
+##Method
+1. Tidy the data set
+
+A number of variables have empty observations and DIV/0. This is replaced by entering NA in lieu of these observations. There are some variables which have no observations at all. These will be removed for the training dataset.
+
+```{r}
+#Load data
+training <- read.csv(file="pml-training.csv",header=TRUE)
+testing <- read.csv(file="pml-testing.csv",header=TRUE)
+
+#clean data remvove NA and DIV/0
+training[training == ""] <- NA
+training[training == "#DIV/0!"] <- NA
+training <- training[,colSums(is.na(training)) == 0]
+```
+
+2. Exploratory plot
+
+The dataset contains 59 potential to predict classe. A graphical plot of the predictors can illustrate the potential relationship of the predictors to the outcome. Because 53 predictors would be difficult to make out in one plot, a number of featureplots are produced with 5 predictors each. An example is given below showing a snippet of 5 feature plots.
+
+```{r warning=FALSE, message=FALSE}
+library(caret)
+set.seed(10000)
+
+featurePlot(x=training[,(1:5)],y=training$classe,plot="pairs")
+featurePlot(x=training[,(21:25)],y=training$classe,plot="pairs")
+featurePlot(x=training[,(31:35)],y=training$classe,plot="pairs")
+featurePlot(x=training[,(46:50)],y=training$classe,plot="pairs")
+
+```
+
+From the feature plots, there are some predictors that have clusters around 4 groups, which may indicate that these predictors have some relationship with the outcome (such as num_window, pitch_belt,roll_belt).
+
+In the dataset there are also predictors which may not have a strong effect on the outcome. Variables such as "X", "user_name", the various timestamps should be independent of the outcome and thus can be removed before being fed into the training algorithm.
+
+In addition a zero covariate analysis is performed. Variables with nzv = TRUE can be removed from the training dataset. These predictors are near a near zero variance predictor, which means that the values are unique relative to the sample size such that it is essentially a constant and as a result does not have a bearing on the outcome.
+
+```{r}
+#Remove zero covariates
+nearZeroVar(training,saveMetrics=TRUE)
+#new_window variable can be removed from above
+```
+
+Variable "new_window" can also be removed from the training set
+
+```{r}
+#remove "X", "username" and "timestamps" and "new_window"
+training_subset <- training[,c(-1,-2,-3,-4,-5,-6)]
+```
+
+3. Partition dataset for training and validation
+
+Two machine learning algorithms are selected to develop the prediction model: 1) Rpart Prediction Tree and 2) Random Forest.
+
+Because of computing contraints, the training set will be divided into 5% (**variable: trainingsplit**) for developing the training model while the remainder will be used to validate the model (**variable: trainingvalidate**). Also the number of K-folds will be set to 3. This may have the effect of reducing the variance but increase the bias.
+
+```{r}
+#split training set into smaller set 
+inTrain <- createDataPartition(y=training_subset$classe,p=0.05,list=FALSE)
+trainingvalidate <- training_subset[-inTrain,]
+trainingsplit <- training_subset[inTrain,]
+```
+
+##MODEL 1 - Using rpart Prediction Tree
+Train the model using **rpart** and assign to object **FitmodelRpoart** with predictions assigned to **predictRpartValidate**:
+
+```{r warning=FALSE, message=FALSE}
+FitModelRpart <- train(classe ~ .,data=trainingsplit,method="rpart")
+predictRpartValidate <- predict(FitModelRpart,trainingvalidate)
+
+library(rattle)
+fancyRpartPlot(FitModelRpart$finalModel,main="Model from Training set",sub="Decision Tree")
+
+```
+
+The rpart training algorithm has determined 5 predictors it uses to make predictions - roll_belt, pitch_forearm, roll_forearm, magnet_dumbbell_y and magnet_dumbbell_y.
+
+The accuracy of the rpart model prediction against actual validation outcome is checked:
+```{r}
+#Check accuracy
+confusionMatrix(trainingvalidate$classe,predictRpartValidate)
+```
+
+<<<<<<< HEAD
+<<<<<<< HEAD
+The matrix indicates the model has missed the prediction for classe="D" completely and the accuracy is 50%.
+=======
+The matrix indicates the model has missed the prediction for classe=D completely and the accuracy is 50%.
+>>>>>>> 9fca7649edc8c6bdde6a6f7781b881279743129f
+=======
+The matrix indicates the model has missed the prediction for classe=D completely and the accuracy is 50%.
+>>>>>>> 9fca7649edc8c6bdde6a6f7781b881279743129f
+
+##MODEL 2 - Using Random Forest
+
+A second model is created using **Random Forest** method with **FitModelForest** holding the model and **predictRForestvalidate** holding predictions:
+```{r warning=FALSE}
+FitModelRForest <- train(classe ~ .,data=trainingsplit,method="rf",prox=TRUE,trControl=trainControl(preProcOptions=list(k=3)))
+#Predict validation dataset with training model
+predictRForestvalidate <- predict(FitModelRForest,trainingvalidate)
+```
+
+The accuracy of the random forest prediction model against actual validation outcome is checked:
+```{r}
+confusionMatrix(trainingvalidate$classe,predictRForestvalidate)
+```
+
+Compared to rpart prediction tree, the accuracy of the random forest model is better, i.e. 92% vs 50%. The random forest model is able to predict a larger percentage of testcases correctly in the validation dataset, specifically, it has managed to predict the classe D outcomes compared to the misses in the rpart prediction tree model.
+
+The random forest model shall be used for prediction. There are still mispredictions based on the comparison in confusionMatrix. The model performance can be improved further by eliminating more variables which are not substantial predictors to the outcome. The purpose of this is to reduce the chances of overfitting the model to the training set in order to improve robustness when applied against the test set. This is done by using varImp() to determine the top predictors.
+
+```{r}
+#find important variables
+varImp(FitModelRForest)
+```
+
+The predictors which have an importance of 30 and above is chosen for the final model and retrained:
+```{r}
+FitModelRForest <- train(classe ~ num_window + roll_belt + pitch_forearm + magnet_dumbbell_z + magnet_dumbbell_y + yaw_belt + pitch_belt,data=trainingsplit,method="rf",prox=TRUE,trControl=trainControl(preProcOptions=list(k=3)))
+```
+
+The accuracy of the random forest prediction model against actual validation outcome is checked one more time:
+```{r}
+confusionMatrix(trainingvalidate$classe,predictRForestvalidate)
+```
+
+The accuracy and the number of mispredictions have not changed after eliminating other variables, suggesting that these variables are not important to the random forest model in predicting the outcome. Reducing the variables as much as possible helps to improve prediction accuracy when applied to a new dataset and not tie the model down to a too specific type of dataset which can happen as a result of overfitting to one dataset.
+
+Reducing predictors also helps to minimise the computation resources needed to calculate predictions.
+
+The chosen model is then applied to the test set to produce the predictions
+```{r eval=FALSE}
+answers <- predict(FitModelRForest,testing)
+```
+
+The script on the cousera website is then used to generate the text file containing the prediction for each test case.
